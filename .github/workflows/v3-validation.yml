@@ -1,0 +1,18 @@
+name: EVA NAT V3 Validation
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [feature/v3-dashboard-controles]
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify syntax and PDF markers
+        run: node tests/smoke.cjs
