@@ -190,7 +190,7 @@
     <div style="font-size: 0.85rem; color: #95a5a6; margin-top: 5px; font-style: italic;">By Fred Vedrenne</div>
 </div>
             <ul class="nav-menu" role="menu">
-                <li role="none"><a href="#" class="nav-link active" data-target="view-configuration" role="menuitem">Configuration</a></li>
+                <li role="none"><a href="#" class="nav-link active" data-target="view-dashboard" role="menuitem">Tableau de bord</a></li><li role="none"><a href="#" class="nav-link" data-target="view-configuration" role="menuitem">Configuration</a></li>
                 <li role="none"><a href="#" class="nav-link" data-target="view-absents" role="menuitem">Vérification des absents</a></li>
                 <li role="none"><a href="#" class="nav-link" data-target="view-stat-etab" role="menuitem">Statistiques Établissement</a></li>
                 <li role="none"><a href="#" class="nav-link" data-target="view-stat-classe" role="menuitem">Statistiques par Classe</a></li>
@@ -208,8 +208,9 @@
         <!-- CONTENU PRINCIPAL -->
         <main class="main-content" role="main">
             
+<section id="view-dashboard" class="view-section active"><header><h1>Tableau de bord EVA NAT</h1><p>Contrôles des données importées, sans indicateurs simulés.</p></header><div class="form-grid"><div class="card"><h3>Élèves Pronote</h3><strong id="dash-students">—</strong></div><div class="card"><h3>Feuilles DEPP</h3><strong id="dash-depp">—</strong></div><div class="card"><h3>Contacts Siècle</h3><strong id="dash-contacts">—</strong></div><div class="card"><h3>Fichiers PDF</h3><strong id="dash-pdfs">—</strong></div></div><div class="card"><h3>État des imports</h3><div id="dash-checks" role="status" aria-live="polite"></div><button id="dash-config" class="btn btn-primary" style="margin-top:20px">Importer les données</button><button id="dash-refresh" class="btn btn-outline" style="margin-top:20px">Actualiser</button></div><div class="card"><h3>Contrôle obligatoire</h3><p>Ces indicateurs mesurent la présence des sources, non la validité des rapprochements. Contrôler les PDF et chaque destinataire avant transmission.</p></div></section>
 <!-- VUE : CONFIGURATION -->
-            <section id="view-configuration" class="view-section active">
+            <section id="view-configuration" class="view-section">
                 <header>
                     <h1>Paramétrage et Configuration</h1>
                     <p>Saisissez les informations et suivez les étapes d'importation pour générer les analyses.</p>
@@ -776,7 +777,7 @@ const appData = {
         const PDF_KEYWORDS = {
             classeStart: "CAP - 2 de ",
             classeEnd: " Année scolaire ",
-            eleveStart: "- 2027 ", // À adapter à la campagne : ne pas traiter sans vérifier cet identifiant 
+            eleveStart: null, // Détection de la campagne dans le texte PDF, sans année figée 
             eleveEnd: " En début"
         };
 
@@ -2292,15 +2293,20 @@ function buildClassTableHTML(selectedClass, selectedSubject, isPdf = false, eple
                                 classe = fullText.substring(startC + PDF_KEYWORDS.classeStart.length, endC).trim();
                             }
 
-                            const startE = fullText.indexOf(PDF_KEYWORDS.eleveStart);
-                            const endE = fullText.indexOf(PDF_KEYWORDS.eleveEnd, startE);
-                            if (startE !== -1 && endE !== -1) {
-                                eleve = fullText.substring(startE + PDF_KEYWORDS.eleveStart.length, endE).trim();
-                            }
+                            // Identifiant de campagne variable : année reconnue uniquement entre séparateurs.
+                            const matchEleve = fullText.match(/-\s*20\d{2}\s+(.+?)\s+En début\b/i);
+                            if (matchEleve) eleve = matchEleve[1].trim();
 
                             if (classe && eleve) {
                                 const parts = extractNomPrenomFromPDF(eleve);
-                                currentStudentKey = `${classe}|${parts.nom}|${parts.prenom}`;
+                                if (!normalizeKey(parts.nom, parts.prenom)) {
+                                    throw new Error("Élève illisible dans le PDF : document " + (s + 1) + ", page " + i);
+                                }
+                                const identifiedKey = `${classe}|${parts.nom}|${parts.prenom}`;
+                                currentStudentKey = identifiedKey;
+                            } else if (i === 1 || classe || eleve) {
+                                // Ne jamais hériter l'identité d'un fichier précédent ni d'un en-tête partiel.
+                                currentStudentKey = "Inconnu";
                             }
 
                             if (!groupedPages[currentStudentKey]) groupedPages[currentStudentKey] = [];
@@ -2316,6 +2322,8 @@ function buildClassTableHTML(selectedClass, selectedSubject, isPdf = false, eple
                         throw new Error(`${unidentifiedCount} page(s) sans élève identifié : traitement annulé pour éviter une attribution erronée. Vérifiez les mots-clés PDF_KEYWORDS et le format DEPP.`);
                     }
                     const sortedKeys = Object.keys(groupedPages).sort((a, b) => a.localeCompare(b));
+                    if (!sortedKeys.length) throw new Error("Aucun élève identifiable dans les fichiers PDF.");
+                    if (!sortedKeys.length) throw new Error("Aucune page PDF exploitable.");
                     progressBar.style.width = '75%';
 
                     if (mode === 'rectoverso' || mode === 'livret') {
@@ -2383,9 +2391,7 @@ function buildClassTableHTML(selectedClass, selectedSubject, isPdf = false, eple
                         // CORRECTION : On utilise le dictionnaire Siècle global
                         const emailMap = appData.emailMap || new Map();
                         
-                        if (emailMap.size === 0) {
-                            console.warn("Attention : Le dictionnaire d'e-mails est vide. Le fichier Siècle a-t-il été importé ?");
-                        }
+                        if (emailMap.size === 0) { throw new Error("Publipostage bloqué : contacts Siècle absents. Importez et vérifiez les destinataires."); }
 
                         for (let key of sortedKeys) {
                             const pages = groupedPages[key];
@@ -2403,9 +2409,11 @@ function buildClassTableHTML(selectedClass, selectedSubject, isPdf = false, eple
                             zip.file(cleanFileName, pdfBytes);
 
                             // L'interrogation de l'annuaire Siècle se fait ici
-                            const emails = emailMap.get(normalizeKey(n, p)) || { mail1: "", mail2: "" };
+                            const identityKey = normalizeKey(n, p);
+                            const duplicates = (appData.fichiers.eleves || []).filter(e => normalizeKey(e["Nom de famille"], e["Prénom"]) === identityKey);
+                            const emails = emailMap.get(identityKey) || { mail1: "", mail2: "" };
                             const validEmail = s => /^[^\s@;,]+@[^\s@;,]+\.[^\s@;,]+$/.test(String(s || ""));
-                            const statut = emails.collision ? "A_VERIFIER_HOMONYME" :
+                            const statut = (emails.collision || duplicates.length > 1) ? "A_VERIFIER_HOMONYME" :
                                 (!validEmail(emails.mail1) && !validEmail(emails.mail2)) ? "A_VERIFIER_EMAIL" : "PRET_A_CONTROLER";
                             verificationRows.push({ cls, n, p, cleanFileName, statut });
                             mailMergeData.push({
@@ -3521,6 +3529,7 @@ if(parsedData.fichiers) appData.fichiers = { eleves: null, depp: null, deppHisto
                 reader.readAsText(file, "UTF-8");
             });
         }
+function refreshEvaDashboard(){const rows=Array.isArray(appData.fichiers.eleves)?appData.fichiers.eleves:[];const depp=appData.fichiers.depp;const sheets=depp&&typeof depp==="object"?Object.keys(depp).length:0;const mails=appData.emailMap instanceof Map?appData.emailMap.size:0;const pdfs=appData.pdfFilesList.length;for(const [id,n] of [["dash-students",rows.length],["dash-depp",sheets],["dash-contacts",mails],["dash-pdfs",pdfs]]){const el=document.getElementById(id);if(el)el.textContent=n||"—"}const target=document.getElementById("dash-checks");if(!target)return;target.replaceChildren();for(const [ok,label] of [[rows.length>0,"Annuaire Pronote"],[sheets>0,"Restitution DEPP"],[mails>0,"Contacts Siècle (publipostage)"],[pdfs>0,"Documents PDF sélectionnés"]]){const p=document.createElement("p");p.style.marginBottom="8px";p.textContent=(ok?"✓ ":"○ ")+label;target.appendChild(p)}}document.addEventListener("DOMContentLoaded",()=>{document.getElementById("dash-refresh")?.addEventListener("click",refreshEvaDashboard);document.getElementById("dash-config")?.addEventListener("click",()=>document.querySelector('[data-target="view-configuration"]')?.click());refreshEvaDashboard();document.querySelectorAll(".nav-link").forEach(el=>el.addEventListener("click",()=>setTimeout(refreshEvaDashboard,0)));document.querySelectorAll('input[type="file"]').forEach(el=>el.addEventListener("change",()=>setTimeout(refreshEvaDashboard,500)));document.getElementById("btn-load-pronote")?.addEventListener("click",()=>setTimeout(refreshEvaDashboard,250));});
     </script>
 </body>
 </html>
