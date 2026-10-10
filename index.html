@@ -2303,9 +2303,6 @@ function buildClassTableHTML(selectedClass, selectedSubject, isPdf = false, eple
                                     throw new Error("Élève illisible dans le PDF : document " + (s + 1) + ", page " + i);
                                 }
                                 const identifiedKey = `${classe}|${parts.nom}|${parts.prenom}`;
-                                if (currentStudentKey !== "Inconnu" && currentStudentKey !== identifiedKey && !classe) {
-                                    throw new Error("Changement ambigu d'élève dans les pages PDF.");
-                                }
                                 currentStudentKey = identifiedKey;
                             } else if (i === 1 || classe || eleve) {
                                 // Ne jamais hériter l'identité d'un fichier précédent ni d'un en-tête partiel.
