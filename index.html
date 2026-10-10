@@ -777,7 +777,7 @@ const appData = {
         const PDF_KEYWORDS = {
             classeStart: "CAP - 2 de ",
             classeEnd: " Année scolaire ",
-            eleveStart: "- 2027 ", // À adapter à la campagne : ne pas traiter sans vérifier cet identifiant 
+            eleveStart: null, // Détection de la campagne dans le texte PDF, sans année figée 
             eleveEnd: " En début"
         };
 
@@ -2293,15 +2293,23 @@ function buildClassTableHTML(selectedClass, selectedSubject, isPdf = false, eple
                                 classe = fullText.substring(startC + PDF_KEYWORDS.classeStart.length, endC).trim();
                             }
 
-                            const startE = fullText.indexOf(PDF_KEYWORDS.eleveStart);
-                            const endE = fullText.indexOf(PDF_KEYWORDS.eleveEnd, startE);
-                            if (startE !== -1 && endE !== -1) {
-                                eleve = fullText.substring(startE + PDF_KEYWORDS.eleveStart.length, endE).trim();
-                            }
+                            // Identifiant de campagne variable : année reconnue uniquement entre séparateurs.
+                            const matchEleve = fullText.match(/-\s*20\d{2}\s+(.+?)\s+En début\b/i);
+                            if (matchEleve) eleve = matchEleve[1].trim();
 
                             if (classe && eleve) {
                                 const parts = extractNomPrenomFromPDF(eleve);
-                                currentStudentKey = `${classe}|${parts.nom}|${parts.prenom}`;
+                                if (!normalizeKey(parts.nom, parts.prenom)) {
+                                    throw new Error("Élève illisible dans le PDF : document " + (s + 1) + ", page " + i);
+                                }
+                                const identifiedKey = `${classe}|${parts.nom}|${parts.prenom}`;
+                                if (currentStudentKey !== "Inconnu" && currentStudentKey !== identifiedKey && !classe) {
+                                    throw new Error("Changement ambigu d'élève dans les pages PDF.");
+                                }
+                                currentStudentKey = identifiedKey;
+                            } else if (i === 1 || classe || eleve) {
+                                // Ne jamais hériter l'identité d'un fichier précédent ni d'un en-tête partiel.
+                                currentStudentKey = "Inconnu";
                             }
 
                             if (!groupedPages[currentStudentKey]) groupedPages[currentStudentKey] = [];
@@ -2317,6 +2325,7 @@ function buildClassTableHTML(selectedClass, selectedSubject, isPdf = false, eple
                         throw new Error(`${unidentifiedCount} page(s) sans élève identifié : traitement annulé pour éviter une attribution erronée. Vérifiez les mots-clés PDF_KEYWORDS et le format DEPP.`);
                     }
                     const sortedKeys = Object.keys(groupedPages).sort((a, b) => a.localeCompare(b));
+                    if (!sortedKeys.length) throw new Error("Aucun élève identifiable dans les fichiers PDF.");
                     if (!sortedKeys.length) throw new Error("Aucune page PDF exploitable.");
                     progressBar.style.width = '75%';
 
@@ -2403,9 +2412,11 @@ function buildClassTableHTML(selectedClass, selectedSubject, isPdf = false, eple
                             zip.file(cleanFileName, pdfBytes);
 
                             // L'interrogation de l'annuaire Siècle se fait ici
-                            const emails = emailMap.get(normalizeKey(n, p)) || { mail1: "", mail2: "" };
+                            const identityKey = normalizeKey(n, p);
+                            const duplicates = (appData.fichiers.eleves || []).filter(e => normalizeKey(e["Nom de famille"], e["Prénom"]) === identityKey);
+                            const emails = emailMap.get(identityKey) || { mail1: "", mail2: "" };
                             const validEmail = s => /^[^\s@;,]+@[^\s@;,]+\.[^\s@;,]+$/.test(String(s || ""));
-                            const statut = emails.collision ? "A_VERIFIER_HOMONYME" :
+                            const statut = (emails.collision || duplicates.length > 1) ? "A_VERIFIER_HOMONYME" :
                                 (!validEmail(emails.mail1) && !validEmail(emails.mail2)) ? "A_VERIFIER_EMAIL" : "PRET_A_CONTROLER";
                             verificationRows.push({ cls, n, p, cleanFileName, statut });
                             mailMergeData.push({
