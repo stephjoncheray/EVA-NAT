@@ -1676,7 +1676,7 @@ function getSheetRegex(level) {
         chunks[0].forEach(student => {
             finalHtml += `<tr><td class="student-name">${student.nomRaw} ${student.prenomRaw} <br><small style="color:#777; font-weight:normal;">(${student.classe})</small></td>`;
             allCompetences.forEach(comp => {
-                const deppRow = comp.sheet.data.find(r => normalizeKey(r['Nom élève'] || r['Nom de famille'] || r['Nom'], r['Prénom élève'] || r['Prénom']) === student.key);
+                const deppRow = comp.sheet.data.find(r => normalizeKey(r['Nom élève'] || r['Nom de famille'] || r['Nom'], r['Prénom élève'] || r['Prénom']) === student.key && String(r['Classe'] || '').trim().toUpperCase() === String(student.classe || selectedClass).trim().toUpperCase());
                 finalHtml += getResultCellHtml(deppRow, comp.colName, isPdf);
             });
             finalHtml += `</tr>`;
@@ -1705,7 +1705,7 @@ function getSheetRegex(level) {
         chunk.forEach(student => {
             pageHtml += `<tr><td class="student-name">${student.nomRaw} ${student.prenomRaw} <br><small style="color:#777; font-weight:normal;">(${student.classe})</small></td>`;
             allCompetences.forEach(comp => {
-                const deppRow = comp.sheet.data.find(r => normalizeKey(r['Nom élève'] || r['Nom de famille'] || r['Nom'], r['Prénom élève'] || r['Prénom']) === student.key);
+                const deppRow = comp.sheet.data.find(r => normalizeKey(r['Nom élève'] || r['Nom de famille'] || r['Nom'], r['Prénom élève'] || r['Prénom']) === student.key && String(r['Classe'] || '').trim().toUpperCase() === String(student.classe || selectedClass).trim().toUpperCase());
                 pageHtml += getResultCellHtml(deppRow, comp.colName, isPdf);
             });
             pageHtml += `</tr>`;
@@ -1859,7 +1859,7 @@ function buildClassTableHTML(selectedClass, selectedSubject, isPdf = false, eple
         classStudents.forEach(student => {
             screenHtml += `<tr><td class="student-name">${student.nomRaw} ${student.prenomRaw}</td>`;
             allCompetences.forEach(comp => {
-                const deppRow = comp.sheet.data.find(r => normalizeKey(r['Nom élève'] || r['Nom de famille'] || r['Nom'], r['Prénom élève'] || r['Prénom']) === student.key);
+                const deppRow = comp.sheet.data.find(r => normalizeKey(r['Nom élève'] || r['Nom de famille'] || r['Nom'], r['Prénom élève'] || r['Prénom']) === student.key && String(r['Classe'] || '').trim().toUpperCase() === String(student.classe || selectedClass).trim().toUpperCase());
                 screenHtml += getResultCellHtml(deppRow, comp.colName, false);
             });
             screenHtml += `</tr>`;
@@ -1897,7 +1897,7 @@ function buildClassTableHTML(selectedClass, selectedSubject, isPdf = false, eple
         chunk.forEach(student => {
             pdfHtml += `<tr><td class="student-name">${student.nomRaw} ${student.prenomRaw}</td>`;
             allCompetences.forEach(comp => {
-                const deppRow = comp.sheet.data.find(r => normalizeKey(r['Nom élève'] || r['Nom de famille'] || r['Nom'], r['Prénom élève'] || r['Prénom']) === student.key);
+                const deppRow = comp.sheet.data.find(r => normalizeKey(r['Nom élève'] || r['Nom de famille'] || r['Nom'], r['Prénom élève'] || r['Prénom']) === student.key && String(r['Classe'] || '').trim().toUpperCase() === String(student.classe || selectedClass).trim().toUpperCase());
                 pdfHtml += getResultCellHtml(deppRow, comp.colName, true);
             });
             pdfHtml += `</tr>`;
@@ -2807,7 +2807,7 @@ checkVocationalMapping();
         html += `<tr><td class="student-name">${student.nomRaw} ${student.prenomRaw} <br><small style="color:#777; font-weight:normal;">(${student.classe})</small></td>`;
         
         allCompetences.forEach(comp => {
-            const deppRow = comp.sheet.data.find(r => normalizeKey(r['Nom élève'] || r['Nom de famille'] || r['Nom'], r['Prénom élève'] || r['Prénom']) === student.key);
+            const deppRow = comp.sheet.data.find(r => normalizeKey(r['Nom élève'] || r['Nom de famille'] || r['Nom'], r['Prénom élève'] || r['Prénom']) === student.key && String(r['Classe'] || '').trim().toUpperCase() === String(student.classe || selectedClass).trim().toUpperCase());
             html += getResultCellHtml(deppRow, comp.colName, false);
         });
         html += `</tr>`;
@@ -2838,90 +2838,67 @@ checkVocationalMapping();
  * par rapport à l'annuaire Siècle/Pronote pour détecter les élèves absents.
  */
 function analyzeMissingResults() {
-    if (!appData.fichiers.eleves || !appData.fichiers.depp) { 
-        alert("Importez les fichiers Siècle et DEPP."); 
-        return; 
+    if (!appData.fichiers.eleves || !appData.fichiers.depp) {
+        alert("Importez les fichiers Siècle et DEPP.");
+        return;
     }
-    
-    const eleves = appData.fichiers.eleves;
+
     const depp = appData.fichiers.depp;
-    const deppFr_Presences = new Set();
-    const deppMath_Presences = new Set();
+    const presents = { fr: new Set(), math: new Set() };
+    const evaluatedLevels = new Set();
+    const reportedClasses = new Set();
+    const sheetRegex = /^\\d{2}(?:EVA(?:[456]|2GT|2PRO)|LINU)_(.*)$/i;
+
+    Object.entries(depp).forEach(([sheetName, rows]) => {
+        const match = sheetName.match(sheetRegex);
+        if (!match || !Array.isArray(rows)) return;
+        const subject = /fran|litt/i.test(match[1]) ? 'fr'
+            : /math|num[eé]/i.test(match[1]) ? 'math' : null;
+        if (!subject) return;
+        const level = /^\\d{2}LINU_/i.test(sheetName) ? '1CAP'
+            : /^\\d{2}EVA2PRO_/i.test(sheetName) ? '2PRO'
+            : /^\\d{2}EVA2GT_/i.test(sheetName) ? '2'
+            : sheetName.match(/^\\d{2}EVA([456])_/i)?.[1];
+        if (level) evaluatedLevels.add(level);
+        rows.forEach(row => {
+            const classe = String(row['Classe'] || '').trim().toUpperCase();
+            if (classe) reportedClasses.add(classe);
+            const name = row['Nom élève'] || row['Nom de famille'] || row['Nom'];
+            const first = row['Prénom élève'] || row['Prénom'];
+            const key = normalizeKey(name, first);
+            if (!key || /\\d/.test(String(name || ''))) return;
+            const hasScore = Object.keys(row).some(col =>
+                !/^(classe|nom|pr[eé]nom)/i.test(col) &&
+                !/date|origine/i.test(col) &&
+                ['sat', 'fra', 'bes'].includes(parseDeppValue(row[col]))
+            );
+            if (hasScore) presents[subject].add(key);
+        });
+    });
     
-    // RegEx mise à jour pour inclure 2PRO et LINU (CAP)
-    const regexSheet = /^\d{2}(?:EVA(?:[456]|2GT|2PRO)|LINU)_(.*)$/i;
-
-    // 1. Scan des présences dans la DEPP
-    Object.keys(depp).forEach(sheetName => {
-        const match = sheetName.match(regexSheet);
-        if (match) {
-            const matiere = match[1].toLowerCase();
-            const isFr = matiere.includes('fran') || matiere.includes('litt');
-            const isMath = matiere.includes('math') || matiere.includes('numé') || matiere.includes('nume');
-            
-            // L'accolade ouvrante est bien active et hors du commentaire
-            if (isFr || isMath) {
-                depp[sheetName].forEach(row => {
-                    const nomRaw = String(row['Nom élève'] || row['Nom de famille'] || row['Nom'] || "").trim();
-                    if (/\d/.test(nomRaw)) return; // Filtre les lignes de statistiques intégrées par la DEPP
-                    
-                    const prenomRaw = String(row['Prénom élève'] || row['Prénom'] || "").trim();
-                    const key = normalizeKey(nomRaw, prenomRaw);
-                    
-                    if (key) {
-                        let estPresent = false;
-                        Object.keys(row).forEach(colName => {
-                            const colNameLower = colName.toLowerCase();
-                            // On exclut les colonnes d'identité pour chercher une vraie note de compétence
-                            if (!colNameLower.includes('nom') && !colNameLower.includes('prénom') && !colNameLower.includes('prenom') && !colNameLower.includes('classe') && !colNameLower.includes('date')) {
-                                const valeur = String(row[colName] || "").trim().toLowerCase();
-                                if (valeur !== "" && valeur !== "absent" && valeur !== "absente" && valeur !== "nan" && valeur !== "undefined") {
-                                    estPresent = true;
-                                }
-                            }
-                        });
-                        
-                        if (estPresent) {
-                            if (isFr) deppFr_Presences.add(key);
-                            if (isMath) deppMath_Presences.add(key);
-                        }
-                    }
-                });
-            }
-        }
+    const missing = { fr: [], math: [] };
+    const seen = new Set();
+    appData.fichiers.eleves.forEach(student => {
+        const classe = String(student['Classe'] || student['Lib. Structure'] || '').trim();
+        const level = getLevelFromClass(classe);
+        const type = String(student['Type Structure'] || '').trim().toUpperCase();
+        if (!evaluatedLevels.has(level) || !['', 'D', 'C', 'DIV'].includes(type)) return;
+        // Ne pas déclarer absent un élève hors des divisions présentes dans le fichier.
+        if (reportedClasses.size && !reportedClasses.has(classe.toUpperCase())) return;
+        const key = normalizeKey(student['Nom de famille'], student['Prénom']);
+        if (!key || seen.has(key + '|' + classe)) return;
+        seen.add(key + '|' + classe);
+        const label = String(student['Nom de famille'] || '') + ' ' +
+            String(student['Prénom'] || '') + ' (' + classe + ')';
+        if (!presents.fr.has(key)) missing.fr.push(label);
+        if (!presents.math.has(key)) missing.math.push(label);
     });
-
-    // 2. Construction du référentiel des élèves attendus (Annuaire)
-    const elevesUniques = new Map();
-    eleves.forEach(eleve => {
-        const key = normalizeKey(eleve['Nom de famille'], eleve['Prénom']);
-        const typeStruct = String(eleve['Type Structure'] || "").trim().toUpperCase();
-        const classe = String(eleve['Classe'] || eleve['Lib. Structure'] || "").trim();
-        
-        // Inclut désormais explicitement les CAP et PRO en cherchant 1 ou 2
-        if (key && (classe.startsWith('6') || classe.startsWith('5') || classe.startsWith('4') || classe.startsWith('2') || classe.startsWith('1'))) {
-            if (!elevesUniques.has(key) || typeStruct === 'D' || typeStruct === 'C' || typeStruct === 'DIV' || typeStruct === '') {
-                elevesUniques.set(key, { nomRaw: eleve['Nom de famille'], prenomRaw: eleve['Prénom'], classe });
-            }
-        }
-    });
-
-    // 3. Croisement (Différence entre Attendus et Présents)
-    const missingFr = [], missingMath = [];
-    elevesUniques.forEach((data, key) => {
-        const displayLabel = `${data.nomRaw} ${data.prenomRaw} (${data.classe})`;
-        if (!deppFr_Presences.has(key)) missingFr.push(displayLabel);
-        if (!deppMath_Presences.has(key)) missingMath.push(displayLabel);
-    });
-
-    // 4. Mise à jour de l'état et rendu UI
-    appData.state.missingResults.fr = missingFr;
-    appData.state.missingResults.math = missingMath;
+    appData.state.missingResults.fr = missing.fr;
+    appData.state.missingResults.math = missing.math;
     document.getElementById('absents-controls').style.display = 'flex';
     document.getElementById('absents-results').style.display = 'grid';
     renderMissingLists();
 }
-
 
         function renderMissingLists() {
             const { fr, math } = appData.state.missingResults;
