@@ -798,8 +798,8 @@ function getLevelFromClass(classe) {
     const niveaux = new Set();
     Object.entries(depp).forEach(([onglet, lignes]) => {
         let niveau = null;
-        if (/^\\d{2}EVA2PRO_/i.test(onglet)) niveau = '2PRO';
-        else if (/^\\d{2}LINU_/i.test(onglet)) niveau = '1CAP';
+        if (/^\d{2}EVA2PRO_/i.test(onglet)) niveau = '2PRO';
+        else if (/^\d{2}LINU_/i.test(onglet)) niveau = '1CAP';
         if (!niveau || !Array.isArray(lignes)) return;
         if (lignes.some(ligne => String(ligne['Classe'] || '').trim().toUpperCase() === division)) {
             niveaux.add(niveau);
