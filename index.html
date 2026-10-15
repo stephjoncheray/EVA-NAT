@@ -786,13 +786,33 @@ const appData = {
  */
 function getLevelFromClass(classe) {
     if (!classe) return null;
-    if (appData.state.classMappings && appData.state.classMappings[classe]) {
-        return appData.state.classMappings[classe];
-    }
-    if (classe.startsWith('2') && !classe.includes('PRO') && !classe.includes('CAP')) return '2';
-    if (classe.startsWith('6')) return '6';
-    if (classe.startsWith('5')) return '5';
-    if (classe.startsWith('4')) return '4';
+    const division = String(classe).trim().toUpperCase();
+    // Les affectations explicites restent prioritaires.
+    const mappings = appData.state.classMappings || {};
+    if (mappings[classe] || mappings[division]) return mappings[classe] || mappings[division];
+
+    // Pour les divisions professionnelles, la restitution DEPP fournit
+    // une source de vérité plus fiable que le préfixe de classe.
+    // Une division présente dans plusieurs niveaux reste à affecter manuellement.
+    const depp = appData.fichiers.depp || {};
+    const niveaux = new Set();
+    Object.entries(depp).forEach(([onglet, lignes]) => {
+        let niveau = null;
+        if (/^\\d{2}EVA2PRO_/i.test(onglet)) niveau = '2PRO';
+        else if (/^\\d{2}LINU_/i.test(onglet)) niveau = '1CAP';
+        if (!niveau || !Array.isArray(lignes)) return;
+        if (lignes.some(ligne => String(ligne['Classe'] || '').trim().toUpperCase() === division)) {
+            niveaux.add(niveau);
+        }
+    });
+    if (niveaux.size === 1) return [...niveaux][0];
+    if (niveaux.size > 1) return null; // ambigu : imposer un choix utilisateur
+
+    // Règles historiques inchangées pour le collège et la seconde GT.
+    if (division.startsWith('2') && !division.includes('PRO') && !division.includes('CAP')) return '2';
+    if (division.startsWith('6')) return '6';
+    if (division.startsWith('5')) return '5';
+    if (division.startsWith('4')) return '4';
     return null;
 }
 
