@@ -2704,7 +2704,7 @@ checkVocationalMapping();
                     ? appData.pronoteMap.get(key) 
                     : String(el['Etablissement d\'origine'] || el["Etab. d'origine"] || el["Etab. Prec."] || "Non renseigné").trim();
                 
-                if (classe.startsWith(level) && (type === 'D' || type === 'C' || type === 'DIV' || type === '') && origine !== "Non renseigné" && origine !== "") {
+                if (getLevelFromClass(classe) === level && (type === 'D' || type === 'C' || type === 'DIV' || type === '') && origine !== "Non renseigné" && origine !== "") {
                     originsCount.set(origine, (originsCount.get(origine) || 0) + 1);
                 }
             });
@@ -3004,7 +3004,7 @@ function analyzeMissingResults() {
                 const classe = String(el['Classe'] || el['Lib. Structure'] || "").trim();
                 const type = String(el['Type Structure'] || "").trim().toUpperCase();
                 let origine = appData.pronoteMap.has(key) ? appData.pronoteMap.get(key) : String(el['Etablissement d\'origine'] || el["Etab. d'origine"] || el["Etab. Prec."] || "Non renseigné").trim();
-                if (classe.startsWith(level) && (type === 'D' || type === 'C' || type === 'DIV' || type === '') && origine !== "Non renseigné" && origine !== "") {
+                if (getLevelFromClass(classe) === level && (type === 'D' || type === 'C' || type === 'DIV' || type === '') && origine !== "Non renseigné" && origine !== "") {
                     originsCount.set(origine, (originsCount.get(origine) || 0) + 1);
                 }
             });
@@ -3024,7 +3024,7 @@ function analyzeMissingResults() {
             controls.style.display = 'flex';
             if (appData.state.currentViewType === 'origine' && appData.state.selectedOrigins.length === 0) { renderArea.innerHTML = `<div class="info-data">Veuillez sélectionner au moins un établissement d'origine.</div>`; return; }
             const statsData = generateStatisticsCube();
-            if (Object.keys(statsData).length === 0) { renderArea.innerHTML = `<div class="no-data">Aucune donnée trouvée dans la DEPP pour le niveau ${appData.state.selectedLevel === '2' ? '2nde GT' : appData.state.selectedLevel + 'ème'}.</div>`; return; }
+            if (!Object.values(statsData).some(matiere => Object.values(matiere).some(comp => Object.values(comp).some(groupe => groupe.total > 0)))) { renderArea.innerHTML = `<div class="no-data">Aucune donnée trouvée dans la DEPP pour le niveau ${appData.state.selectedLevel === '2' ? '2nde GT' : appData.state.selectedLevel + 'ème'}.</div>`; return; }
             renderArea.innerHTML = buildUI(statsData);
         }
 
